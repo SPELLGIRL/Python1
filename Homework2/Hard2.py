@@ -55,3 +55,24 @@ while True:
             print(incorrect)
     except ValueError:
         print(incorrect, 'В дате могут быть только целые положительные числа')
+
+
+# Вариант 2:
+
+days_count = (0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+while True:
+    date = input('Решение № 2: Введите дату в формате dd.mm.yyyy: ')
+    try:
+        day, month, year = date.split('.')
+        if len(day) == 2 and len(month) == 2 and len(year) == 4:
+            if 0 < int(month) <= 12 \
+                    and 0 < int(year) <= 9999 \
+                    and 0 < int(day) <= days_count[int(month)]:
+                print(correct)
+                break
+            else:
+                print(incorrect)
+        else:
+            print(incorrect)
+    except ValueError:
+        print(incorrect)
