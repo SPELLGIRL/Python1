@@ -6,7 +6,13 @@
 # функции из модуля math.
 
 
-def my_round(number, ndigits):
+def my_round(number, ndigits: int) -> float:
+    """
+    Округление числа до введенного количества знаков по правилам математики.
+    :param number: число, которое необходимо округлить.
+    :param ndigits: количество знаков после запятой
+    :return: округленное значение
+    """
     number = number * (10 ** ndigits)
     if float(number) - int(number) > 0.5:
         number = number // 1 + 1
@@ -19,3 +25,4 @@ print(my_round(2.1234567, 5))
 print(my_round(2.1999967, 5))
 print(my_round(2.9999967, 5))
 print(my_round(2.55555555557, 5))
+print(my_round(2, 5))
