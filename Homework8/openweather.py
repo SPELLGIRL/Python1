@@ -56,7 +56,7 @@ OpenWeatherMap — онлайн-сервис, который предостав�
     "sunset":1465149961},"id":520068,"name":"Noginsk","cod":200}
 == Сохранение данных в локальную БД ==
 Программа должна позволять:
-1. Создавать файл базы данных SQLite со следующей структурой данных
+1. Создавать файл базы данных SQdb со следующей структурой данных
    (если файла базы данных не существует):
     Погода
         id_города           INTEGER PRIMARY KEY
@@ -94,3 +94,151 @@ OpenWeatherMap — онлайн-сервис, который предостав�
     for day in root.iterfind('ns:day', namespaces=namespaces):
         ...
 """
+
+import urllib.request
+import os
+import subprocess
+import gzip
+import sqlite3 as db
+import json
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PATH_DB = f'{SCRIPT_DIR}/data/SQdb.db'
+with open(f'{SCRIPT_DIR}/app.id', 'r') as f:
+    APP_ID = f.readline().strip()
+BASE_URL = rf'http://api.openweathermap.org/data/2.5/weather?appid={APP_ID}&units=metric'
+
+
+# 1. Создавать файл базы данных SQdb со следующей структурой данных
+def create_table():
+    url = 'http://bulk.openweathermap.org/sample/city.list.json.gz'
+    try:
+        os.stat(f'{SCRIPT_DIR}/data')
+    except FileNotFoundError:
+        os.mkdir(f'{SCRIPT_DIR}/data')
+
+    archive_path = f'{SCRIPT_DIR}/data/city.list.json.gz'
+
+    try:
+        os.stat(archive_path)
+    except FileNotFoundError:
+        urllib.request.urlretrieve(url, archive_path)
+
+    with gzip.open(archive_path, 'rb') as f_in:
+        list_cities = f_in.read().decode('utf-8')
+
+    try:
+        os.stat(PATH_DB)
+    except FileNotFoundError:
+        with db.connect(PATH_DB) as connection:
+            cur = connection.cursor()
+            cur.execute("""CREATE TABLE IF NOT EXISTS `Погода`
+                               (`id_города` INTEGER PRIMARY KEY, `Город` VARCHAR(255), `Дата` DATE,
+                                `Температура` INTEGER, `id_погоды` INTEGER)""")
+    return json.loads(list_cities)
+
+
+def add_db(weather_data):
+    city_weather = [(weather_data["id"], weather_data["name"], weather_data["dt"],
+                     weather_data["main"]["temp"], weather_data["weather"][0]["id"])]
+    with db.connect(PATH_DB) as connection:
+        cur = connection.cursor()
+        cur.executemany("INSERT OR REPLACE INTO `Погода` VALUES (?,?,?,?,?)",
+                        city_weather)
+
+
+# 2. Выводить список стран из файла и предлагать пользователю выбрать страну
+
+def weather_request(name, city_names):
+    """Запрос погоды по Id города
+    Получение данных в формате JSON и обработка
+    """
+    for num in range(len(city_names)):
+        if name == city_names[num]['name']:
+            city_id = '&id=' + str(city_names[num]['id'])
+    final_url = f'{BASE_URL}{city_id}'
+    web_data = urllib.request.urlopen(final_url).read().decode('utf-8')
+    weather_data = json.loads(web_data)
+    print(f'Температура в городе {weather_data["name"]} сейчас '
+          f'{weather_data["main"]["temp"]} градус(ов) по Цельсию.')
+    return weather_data
+
+
+def city_request(list_cities):
+    while True:
+        weather_data = None
+        city_name = input('Введите название города на английском языке: ').title()
+        catches = []
+        for line in list_cities:
+            if city_name == line['name']:
+                weather_data = weather_request(city_name, list_cities)
+                add_db(weather_data)
+                break
+            elif line['name'].startswith(city_name[:int(len(city_name) / 1.5)]):
+                catches.append(line['name'])
+        if weather_data is not None:
+            break
+        print("Уточните название")
+        if len(catches):
+            print("Возможные варианты:")
+            print('\n'.join(catches))
+        else:
+            print('не обнаружено совпадений')
+
+
+# 3. Скачивать JSON (XML) файлы погоды в городах выбранной страны
+# Реализовано в файле export_openweather.py по id города.
+# 4. Парсить последовательно каждый из файлов и добавлять данные о погоде в базу
+#    данных. Если данные для данного города и данного дня есть в базе - обновить
+#    температуру в существующей записи.
+
+def country_request(list_cities):
+    while True:
+        country_name = input(
+            'Введите аббревиатуру страны на английском языке (например RU): ').upper()
+        cities = {}
+        for line in list_cities:
+            if country_name == line['country']:
+                cities[str(line['id'])] = str(line['name'])
+        if cities:
+            try:
+                os.stat(f'{SCRIPT_DIR}/data/weather')
+            except FileNotFoundError:
+                os.mkdir(f'{SCRIPT_DIR}/data/weather')
+            try:
+                os.stat(f'{SCRIPT_DIR}/data/weather/{country_name}')
+            except FileNotFoundError:
+                os.mkdir(f'{SCRIPT_DIR}/data/weather/{country_name}')
+            for city_id, name in cities.items():
+                subprocess.call(
+                    ['python', f'{SCRIPT_DIR}/export_openweather.py', '--json',
+                     f'data/weather/{country_name}/{name}', city_id])
+                with open(
+                        f'{SCRIPT_DIR}/data/weather/{country_name}/{name}.json') as file:
+                    data = json.loads(file.read())
+                    add_db(data)
+            break
+        else:
+            print('Аббревиатура страны не найдена.')
+
+
+def menu():
+    answer = ''
+    while answer != '3':
+
+        answer = input('Выберите пункт меню:\n'
+                       '1. Показать и добавить данные по городу\n'
+                       '2. Скачать файлы погоды в формате json и добавить '
+                       'информацию в БД по всем городам страны\n'
+                       '3. Выход\n')
+        if answer == '3':
+            break
+        city_names = create_table()
+        if answer == '1':
+            city_request(city_names)
+        elif answer == '2':
+            country_request(city_names)
+
+
+if __name__ == '__main__':
+    menu()
